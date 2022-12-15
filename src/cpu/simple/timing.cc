@@ -453,6 +453,8 @@ TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
                                  Request::Flags flags,
                                  const std::vector<bool>& byte_enable)
 {
+    DPRINTF(SimpleCPU, "%s: addr: %lx\n", __func__,
+            addr);
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 

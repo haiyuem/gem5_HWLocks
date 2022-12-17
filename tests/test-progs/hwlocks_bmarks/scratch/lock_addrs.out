@@ -1,0 +1,13 @@
+Global frequency set at 1000000000000 ticks per second
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version 22.0.0.2
+gem5 compiled Dec 15 2022 23:38:34
+gem5 started Dec 17 2022 00:21:43
+gem5 executing on 997b9215fa4c, pid 175
+command line: /gem5/build/X86/gem5.opt --debug-flags=Exec --debug-file=/gem5/tests/test-progs/hwlocks_bmarks/scratch/trace.out /gem5/configs/example/se.py -I 1000000000 --cpu-type=TimingSimpleCPU --caches --l2cache --mem-size 8192MiB -n 2 -c histogram_a-x86 '-o=/gem5/tests/test-progs/hwlocks_bmarks/inputs/128_input 128 255 1'
+
+**** REAL SIMULATION ****
+lock address: 0x7fffffffec40
+Exiting @ tick 4789379500 because exiting with last active thread context

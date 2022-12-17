@@ -1,0 +1,98 @@
+	- Cross compiler to RISCV
+	- Find benchmarks 
+		○ 1 global lock, 2 threads 
+		○ Machine problem 1 - parallel B 
+		○ Find some examples in gem5 dir 
+	- Asm volatile ADDI x0, x0, 7
+	- Hack on gem5 
+		○ Find where gem5 decodes ADDI 
+		/home/haiyue/ece585/gem5/build/RISCV/arch/riscv/generated/decode-method.cc.inc #524
+		gem5/src/arch/riscv/isa/decoder.isa
+		○ Write a branch that handles our inst 
+            
+
+Some commands:
+build gem5: 
+docker run -u 1000:1000 --volume /home/haiyue/ece585/gem5:/gem5 -it gcr.io/gem5-test/ubuntu-20.04_all-dependencies:v22-0
+docker run -u 0 --volume /home/haiyue/ece585/gem5:/gem5 -it gcr.io/gem5-test/ubuntu-20.04_all-dependencies:v22-0
+in /gem5: 
+scons build/RISCV/gem5.opt -j 16
+scons build/X86/gem5.opt -j 16
+
+/---Running-benchmarks---/
+from hwlocks_bmarks directory:
+/gem5/build/X86/gem5.opt /gem5/configs/example/se.py -n 2 -c histogram_a-x86 -o="128_input 128 255 2"
+
+Updated workflow for multithreaded C programs (not C++):
+Suppose cpus=n in the program:
+gcc -o cthreads-x86 cthreads.c -static -pthread
+gcc -o tests/test-progs/threads/src/cthreads-load-x86 tests/test-progs/threads/src/cthreads.c -static -pthread
+
+/gem5/build/X86/gem5.opt /gem5/configs/example/se.py -n (n+1) -c /gem5/tests/test-progs/threads/src/cthreads-x86 
+/gem5/build/X86/gem5.opt --debug-flags=SimpleCPU /gem5/configs/example/se.py -n 3 -c /gem5/tests/test-progs/threads/src/cthreads-x86 
+
+Statically compile a multithreaded program:
+g++ -o counter-x86 threaded_counter.cpp -std=c++11 -static -lrt -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
+
+Cross compile to RISCV:
+riscv64-unknown-linux-gnu-g++ -static threads.cpp -o threads_lock_sw-riscv -lpthread
+
+Run statically compiled binary in gem5:
+/gem5/build/RISCV/gem5.opt /gem5/configs/example/se.py -c /gem5/tests/test-progs/threads/src/threads_lock_sw-riscv 
+
+2022.12.01 SimObject locks
++ create gem5 packet on lock acquire/release
++ spin in the lock SimObject
+
+how to communicate between cpu and new simobject directly, or do we have to go through mem ports/reqs?
+
+2022.12.13
+[ ] Get a multicore system configuration working
+[ ] Decide on where to hack 
+	timing.cc recvTimingResp
+
+2022.12.01 Locks in the RF
++ Tell compiler to not touch certain registers, which we will use to hold the locks
++ Use ExecContext getters and setters to get these reg-lock values 
++ Can you call registers by name in assembly?
+=> this fails b/c ARF is private to each thread
+
+Impl: 
++ Add new instruction / or use ADDI: pass in Rx[reg name for lock], imm[acquire or release]
+	+ Declare: standard.isa -> decoder-ns.hh.inc
+	+ Code: decoder.isa -> exec-ns.cc.inc 
++ Check reg value once in decoder.isa, return locked/unlocked in output reg
++ When compiling, constrian the compiler to only use (N - num_locks) regs 
+	for fair comparison, use limited #regs for both baseline and HW lock run 
++ In c benchmark
+	+ asm call unused register name
+	+ lock: while loop on output of asm 
+
+Some design thoughts
++ Try to use a struct in decoder.isa
++ Blocking lock acquire implemented by wrapping it in a while-loop
+
+Run device
+/gem5/build/RISCV/gem5.opt /gem5/configs/hwlocks/run_hwlocks.py --l1i_size=256 --l1d_size=256 --l2_size=512
+
+Use timing instead of atomic CPU
+
+cmd: 
+/gem5/build/X86/gem5.opt  --debug-flags=X86 /gem5/configs/example/se.py --cpu-type=TimingSimpleCPU --caches --l2cache  --mem-size=8192MiB -n 3 -c tests/test-progs/hwlocks_bmarks/histogram_a-x86 -o="128_input 128 255 2"  --output=testhack | grep "addr" > /gem5/test/testhackX86.log
+
+/gem5/build/X86/gem5.opt  --debug-flags=SimpleCPU /gem5/configs/example/se.py --cpu-type=TimingSimpleCPU --caches --l2cache  --mem-size=8192MiB -n 3 -c tests/test-progs/hwlocks_bmarks/histogram_a-x86 -o="128_input 128 255 2"  --output=testhack | grep "initiateMemRead" > /gem5/test/testhack.log
+
+Chain from ISA to functional access:
+readMemAtomic: atomic, initiateMemRead: timing
+build/X86/arch/x86/generated/exec-ns.cc.inc: readMemAtomic/initiateMemRead
+src/arch/generic/memhelpers.hh: readMem/initiateMemRead (xc->*)
+src/cpu/simple/exec_context.hh: cpu->*
+Using simple cpu: 
+	- Timing: 
+		○ src/cpu/simple/timing.cc: TimingSimpleCPU::initiateMemRead (makes RequestPtr here, might be able to hack here??)
+		○ src/arch/generic/mmu.cc: getTlb(mode)->translateTiming
+		○ src/arch/x86/tlb.cc: translateTiming -> translate  -> finalizePhysical ???
+		○ Complicated
+	- Atomic:
+		○ src/cpu/simple/atomic.cc: AtomicSimpleCPU::readMem -> pkt ->sendPacket -> port.sendAtomic(pkt)
+		○ src/mem/port.hh: RequestPort::sendAtomic -> AtomicRequestProtocol::send (or backdoor)

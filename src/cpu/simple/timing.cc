@@ -272,6 +272,14 @@ TimingSimpleCPU::handleReadPacket(PacketPtr pkt)
     if (req->isHTMCmd()) {
         assert(!req->isLocalAccess());
     }
+    // Add functional accesses to the hardware locks
+    // Addr lockaddr = 0xf2c40;
+    // if (pkt->getAddr() == lockaddr){
+    //     dcachePort.sendFunctional(pkt);
+    //     // _status = Idle;
+    //     dcache_pkt = NULL;
+    //     return true;
+    // } else {
 
     // We're about the issues a locked load, so tell the monitor
     // to start caring about this address
@@ -292,6 +300,7 @@ TimingSimpleCPU::handleReadPacket(PacketPtr pkt)
         dcache_pkt = NULL;
     }
     return dcache_pkt == NULL;
+    // }
 }
 
 void
@@ -453,8 +462,6 @@ TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
                                  Request::Flags flags,
                                  const std::vector<bool>& byte_enable)
 {
-    DPRINTF(SimpleCPU, "%s: addr: %lx\n", __func__,
-            addr);
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 
@@ -962,6 +969,17 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
 
     updateCycleCounts();
     updateCycleCounters(BaseCPU::CPU_STATE_ON);
+
+    // This is the place that we change cycle counts
+    // for a memory access to a hardware lock
+    // Addr lockaddr = 0xf2c40;
+    // if (pkt->getAddr() != lockaddr){
+    //     updateCycleCounts();
+    //     updateCycleCounters(BaseCPU::CPU_STATE_ON);
+    // }
+    // else {
+    //     setCurTick(curTick() - 4000);
+    // }
 
     if (pkt->senderState) {
         // hardware transactional memory
